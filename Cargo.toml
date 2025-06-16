@@ -1,0 +1,20 @@
+[package]
+name = "atar"
+version = "0.0.1"
+edition = "2024"
+authors = ["Andrea Reni <mail@x71c9.com>"]
+description = "Ephemeral Terraform runner: applies on start, auto-destroys on exit or failure."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/x71c9/atar"
+readme = "README.md"
+keywords = [
+  "cli",
+  "terraform",
+  "ephemeral",
+]
+categories = [
+  "command-line-utilities",
+  "development-tools"
+]
+
+[dependencies]
