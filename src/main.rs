@@ -25,43 +25,75 @@ fn run() -> Result<()> {
     println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
     return Ok(());
   }
-  if args[1] != "deploy" {
-    eprintln!("Unknown command: {}", args[1]);
-    print_help();
-    process::exit(1);
-  }
-  if args.len() >= 3 && (args[2] == "-h" || args[2] == "--help") {
-    print_deploy_help();
-    return Ok(());
-  }
-
-  let mut terraform_file: Option<PathBuf> = None;
-  let mut vars: HashMap<String, String> = HashMap::new();
-  let mut i = 2;
-  while i < args.len() {
-    match args[i].as_str() {
-      "--terraform" => {
-        i += 1;
-        if i >= args.len() {
-          bail!("--terraform requires a path");
-        }
-        terraform_file = Some(PathBuf::from(&args[i]));
-      }
-      arg if arg.starts_with("--") => {
-        let key = arg.trim_start_matches("--").to_string();
-        i += 1;
-        if i >= args.len() {
-          bail!("Flag {} requires a value", arg);
-        }
-        vars.insert(key, args[i].clone());
-      }
-      other => bail!("Unexpected argument: {}", other),
+  if args[1] == "deploy" {
+    if args.len() >= 3 && (args[2] == "-h" || args[2] == "--help") {
+      print_deploy_help();
+      return Ok(());
     }
-    i += 1;
+    let mut terraform_file: Option<PathBuf> = None;
+    let mut vars: HashMap<String, String> = HashMap::new();
+    let mut i = 2;
+    while i < args.len() {
+      match args[i].as_str() {
+        "--terraform" => {
+          i += 1;
+          if i >= args.len() {
+            bail!("--terraform requires a path");
+          }
+          terraform_file = Some(PathBuf::from(&args[i]));
+        }
+        arg if arg.starts_with("--") => {
+          let key = arg.trim_start_matches("--").to_string();
+          i += 1;
+          if i >= args.len() {
+            bail!("Flag {} requires a value", arg);
+          }
+          vars.insert(key, args[i].clone());
+        }
+        other => bail!("Unexpected argument: {}", other),
+      }
+      i += 1;
+    }
+    let tf_file =
+      terraform_file.context("`--terraform` argument is required")?;
+    return run_deploy(tf_file, vars);
   }
-  let tf_file = terraform_file.context("`--terraform` argument is required")?;
-
-  run_deploy(tf_file, vars)
+  if args[1] == "undeploy" {
+    if args.len() >= 3 && (args[2] == "-h" || args[2] == "--help") {
+      print_undeploy_help();
+      return Ok(());
+    }
+    let mut terraform_file: Option<PathBuf> = None;
+    let mut vars: HashMap<String, String> = HashMap::new();
+    let mut i = 2;
+    while i < args.len() {
+      match args[i].as_str() {
+        "--terraform" => {
+          i += 1;
+          if i >= args.len() {
+            bail!("--terraform requires a path");
+          }
+          terraform_file = Some(PathBuf::from(&args[i]));
+        }
+        arg if arg.starts_with("--") => {
+          let key = arg.trim_start_matches("--").to_string();
+          i += 1;
+          if i >= args.len() {
+            bail!("Flag {} requires a value", arg);
+          }
+          vars.insert(key, args[i].clone());
+        }
+        other => bail!("Unexpected argument: {}", other),
+      }
+      i += 1;
+    }
+    let tf_file =
+      terraform_file.context("`--terraform` argument is required")?;
+    return run_undeploy(tf_file, vars);
+  }
+  eprintln!("Unknown command: {}", args[1]);
+  print_help();
+  process::exit(1);
 }
 
 fn run_deploy(file: PathBuf, vars: HashMap<String, String>) -> Result<()> {
@@ -92,6 +124,19 @@ fn run_deploy(file: PathBuf, vars: HashMap<String, String>) -> Result<()> {
   let _ = rx.recv();
 
   drop(guard);
+  Ok(())
+}
+
+fn run_undeploy(file: PathBuf, vars: HashMap<String, String>) -> Result<()> {
+  ensure_terraform_installed()?;
+  let file = file
+    .canonicalize()
+    .context("Failed to canonicalize Terraform path")?;
+  let dir = file
+    .parent()
+    .context("Cannot determine Terraform directory")?;
+  println!("Destroying Terraform resources in {}", dir.display());
+  run_command("terraform", &["destroy", "-auto-approve"], dir, &vars)?;
   Ok(())
 }
 
@@ -160,7 +205,7 @@ impl Drop for DestroyGuard {
 
 fn print_help() {
   println!(
-    "{} {}\n{}\n\nUSAGE:\n  atar deploy --terraform <PATH> [--<var> <value> ...]\n\nFor help on the `deploy` subcommand, run `atar deploy --help`.",
+    "{} {}\n{}\n\nUSAGE:\n  atar deploy --terraform <PATH> [--<var> <value> ...]\n  atar undeploy --terraform <PATH> [--<var> <value> ...]\n\nFor help on the `deploy` subcommand, run `atar deploy --help`.\nFor help on the `undeploy` subcommand, run `atar undeploy --help`.",
     env!("CARGO_PKG_NAME"),
     env!("CARGO_PKG_VERSION"),
     env!("CARGO_PKG_DESCRIPTION"),
@@ -170,5 +215,11 @@ fn print_help() {
 fn print_deploy_help() {
   println!(
     "atar deploy\n\nDeploys a Terraform module, waits until interrupted, then destroys it.\n\n    USAGE:\n  atar deploy --terraform <PATH> [--<var> <value> ...]\n\n    FLAGS:\n  --terraform <PATH>    Path to Terraform `main.tf` file\n    --<var> <value>       Terraform variable\n"
+  );
+}
+
+fn print_undeploy_help() {
+  println!(
+    "atar undeploy\n\nDestroys an existing Terraform deployment.\n\n    USAGE:\n  atar undeploy --terraform <PATH> [--<var> <value> ...]\n\n    FLAGS:\n  --terraform <PATH>    Path to Terraform `main.tf` file\n    --<var> <value>       Terraform variable\n"
   );
 }
