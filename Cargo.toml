@@ -18,3 +18,5 @@ categories = [
 ]
 
 [dependencies]
+anyhow = "1.0"
+ctrlc = "3.2"
