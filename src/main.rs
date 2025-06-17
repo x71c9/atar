@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
 use ctrlc;
+use serde_json;
 use std::{
   collections::HashMap,
   env,
@@ -16,7 +17,9 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-  let args: Vec<String> = env::args().collect();
+  let mut args: Vec<String> = env::args().collect();
+  let debug = args.iter().any(|a| a == "--debug");
+  args.retain(|a| a != "--debug");
   if args.len() <= 1 || args[1] == "-h" || args[1] == "--help" {
     print_help();
     return Ok(());
@@ -56,7 +59,7 @@ fn run() -> Result<()> {
     }
     let tf_file =
       terraform_file.context("`--terraform` argument is required")?;
-    return run_deploy(tf_file, vars);
+    return run_deploy(tf_file, vars, debug);
   }
   if args[1] == "undeploy" {
     if args.len() >= 3 && (args[2] == "-h" || args[2] == "--help") {
@@ -89,14 +92,18 @@ fn run() -> Result<()> {
     }
     let tf_file =
       terraform_file.context("`--terraform` argument is required")?;
-    return run_undeploy(tf_file, vars);
+    return run_undeploy(tf_file, vars, debug);
   }
   eprintln!("Unknown command: {}", args[1]);
   print_help();
   process::exit(1);
 }
 
-fn run_deploy(file: PathBuf, vars: HashMap<String, String>) -> Result<()> {
+fn run_deploy(
+  file: PathBuf,
+  vars: HashMap<String, String>,
+  debug: bool,
+) -> Result<()> {
   ensure_terraform_installed()?;
   let file = file
     .canonicalize()
@@ -106,13 +113,40 @@ fn run_deploy(file: PathBuf, vars: HashMap<String, String>) -> Result<()> {
     .context("Cannot determine Terraform directory")?;
 
   println!("Initializing Terraform in {}", dir.display());
-  run_command("terraform", &["init"], dir, &vars)?;
+  run_command("terraform", &["init"], dir, &vars, debug)?;
   println!("Applying Terraform in {}", dir.display());
-  run_command("terraform", &["apply", "-auto-approve"], dir, &vars)?;
+  run_command("terraform", &["apply", "-auto-approve"], dir, &vars, debug)?;
+  // Always show Terraform outputs after a successful apply
+  // Show Terraform outputs only if defined (avoid warnings when none).
+  let json_out = Command::new("terraform")
+    .current_dir(dir)
+    .arg("output")
+    .arg("-json")
+    .output()
+    .context("Failed to execute `terraform output -json`")?;
+  if json_out.status.success() {
+    if let Ok(map) = serde_json::from_slice::<HashMap<String, serde_json::Value>>(
+      &json_out.stdout,
+    ) {
+      if !map.is_empty() {
+        println!("Terraform outputs:");
+        let mut out_cmd = Command::new("terraform");
+        out_cmd.current_dir(dir).arg("output");
+        out_cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+        let status = out_cmd
+          .status()
+          .context("Failed to execute `terraform output`")?;
+        if !status.success() {
+          bail!("`terraform output` failed with exit code {}", status);
+        }
+      }
+    }
+  }
 
   let guard = DestroyGuard {
     dir: dir.to_path_buf(),
     vars: vars.clone(),
+    debug,
   };
   let (tx, rx) = mpsc::channel();
   ctrlc::set_handler(move || {
@@ -127,7 +161,11 @@ fn run_deploy(file: PathBuf, vars: HashMap<String, String>) -> Result<()> {
   Ok(())
 }
 
-fn run_undeploy(file: PathBuf, vars: HashMap<String, String>) -> Result<()> {
+fn run_undeploy(
+  file: PathBuf,
+  vars: HashMap<String, String>,
+  debug: bool,
+) -> Result<()> {
   ensure_terraform_installed()?;
   let file = file
     .canonicalize()
@@ -136,7 +174,13 @@ fn run_undeploy(file: PathBuf, vars: HashMap<String, String>) -> Result<()> {
     .parent()
     .context("Cannot determine Terraform directory")?;
   println!("Destroying Terraform resources in {}", dir.display());
-  run_command("terraform", &["destroy", "-auto-approve"], dir, &vars)?;
+  run_command(
+    "terraform",
+    &["destroy", "-auto-approve"],
+    dir,
+    &vars,
+    debug,
+  )?;
   Ok(())
 }
 
@@ -158,11 +202,15 @@ fn run_command(
   args: &[&str],
   dir: &Path,
   vars: &HashMap<String, String>,
+  debug: bool,
 ) -> Result<()> {
   let mut command = Command::new(cmd);
   command.current_dir(dir).args(args);
   for (k, v) in vars {
     command.arg("-var").arg(format!("{}={}", k, v));
+  }
+  if !debug {
+    command.stdout(Stdio::null()).stderr(Stdio::null());
   }
   let status = command
     .status()
@@ -176,6 +224,7 @@ fn run_command(
 struct DestroyGuard {
   dir: PathBuf,
   vars: HashMap<String, String>,
+  debug: bool,
 }
 
 impl Drop for DestroyGuard {
@@ -188,6 +237,9 @@ impl Drop for DestroyGuard {
       .arg("-auto-approve");
     for (k, v) in &self.vars {
       cmd.arg("-var").arg(format!("{}={}", k, v));
+    }
+    if !self.debug {
+      cmd.stdout(Stdio::null()).stderr(Stdio::null());
     }
     match cmd.status() {
       Ok(status) if status.success() => {
@@ -205,7 +257,7 @@ impl Drop for DestroyGuard {
 
 fn print_help() {
   println!(
-    "{} {}\n{}\n\nUSAGE:\n  atar deploy --terraform <PATH> [--<var> <value> ...]\n  atar undeploy --terraform <PATH> [--<var> <value> ...]\n\nFor help on the `deploy` subcommand, run `atar deploy --help`.\nFor help on the `undeploy` subcommand, run `atar undeploy --help`.",
+    "{} {}\n{}\n\nUSAGE:\n  atar [--debug] deploy --terraform <PATH> [--<var> <value> ...]\n  atar [--debug] undeploy --terraform <PATH> [--<var> <value> ...]\n\nFor help on the `deploy` subcommand, run `atar deploy --help`.\nFor help on the `undeploy` subcommand, run `atar undeploy --help`.",
     env!("CARGO_PKG_NAME"),
     env!("CARGO_PKG_VERSION"),
     env!("CARGO_PKG_DESCRIPTION"),

@@ -11,3 +11,4 @@ will be destroyed when you press Ctrl+C or when the process exits.
 atar deploy --terraform /path/to/terraform/main.tf \
   --region us-west-2 --instance_type t2.micro
 ```
+After a successful deploy, Terraform output variables are displayed automatically.
