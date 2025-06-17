@@ -1,13 +1,7 @@
 use anyhow::{Context, Result, bail};
+use atar::{deploy as lib_deploy, undeploy as lib_undeploy};
 use ctrlc;
-use serde_json;
-use std::{
-  collections::HashMap,
-  env,
-  path::{Path, PathBuf},
-  process::{self, Command, Stdio},
-  sync::mpsc,
-};
+use std::{collections::HashMap, env, path::PathBuf, process, sync::mpsc};
 
 fn main() {
   if let Err(err) = run() {
@@ -99,162 +93,6 @@ fn run() -> Result<()> {
   process::exit(1);
 }
 
-fn run_deploy(
-  file: PathBuf,
-  vars: HashMap<String, String>,
-  debug: bool,
-) -> Result<()> {
-  ensure_terraform_installed()?;
-  let file = file
-    .canonicalize()
-    .context("Failed to canonicalize Terraform path")?;
-  let dir = file
-    .parent()
-    .context("Cannot determine Terraform directory")?;
-
-  println!("Initializing Terraform in {}", dir.display());
-  run_command("terraform", &["init"], dir, &vars, debug)?;
-  println!("Applying Terraform in {}", dir.display());
-  run_command("terraform", &["apply", "-auto-approve"], dir, &vars, debug)?;
-  // Always show Terraform outputs after a successful apply
-  // Show Terraform outputs only if defined (avoid warnings when none).
-  let json_out = Command::new("terraform")
-    .current_dir(dir)
-    .arg("output")
-    .arg("-json")
-    .output()
-    .context("Failed to execute `terraform output -json`")?;
-  if json_out.status.success() {
-    if let Ok(map) = serde_json::from_slice::<HashMap<String, serde_json::Value>>(
-      &json_out.stdout,
-    ) {
-      if !map.is_empty() {
-        println!("Terraform outputs:");
-        let mut out_cmd = Command::new("terraform");
-        out_cmd.current_dir(dir).arg("output");
-        out_cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
-        let status = out_cmd
-          .status()
-          .context("Failed to execute `terraform output`")?;
-        if !status.success() {
-          bail!("`terraform output` failed with exit code {}", status);
-        }
-      }
-    }
-  }
-
-  let guard = DestroyGuard {
-    dir: dir.to_path_buf(),
-    vars: vars.clone(),
-    debug,
-  };
-  let (tx, rx) = mpsc::channel();
-  ctrlc::set_handler(move || {
-    let _ = tx.send(());
-  })
-  .context("Failed to set Ctrl-C handler")?;
-
-  println!("Resources deployed. Press Ctrl+C to destroy and exit.");
-  let _ = rx.recv();
-
-  drop(guard);
-  Ok(())
-}
-
-fn run_undeploy(
-  file: PathBuf,
-  vars: HashMap<String, String>,
-  debug: bool,
-) -> Result<()> {
-  ensure_terraform_installed()?;
-  let file = file
-    .canonicalize()
-    .context("Failed to canonicalize Terraform path")?;
-  let dir = file
-    .parent()
-    .context("Cannot determine Terraform directory")?;
-  println!("Destroying Terraform resources in {}", dir.display());
-  run_command(
-    "terraform",
-    &["destroy", "-auto-approve"],
-    dir,
-    &vars,
-    debug,
-  )?;
-  Ok(())
-}
-
-fn ensure_terraform_installed() -> Result<()> {
-  let status = Command::new("terraform")
-    .arg("-version")
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .status()
-    .context("Failed to execute `terraform -version`")?;
-  if !status.success() {
-    bail!("Terraform must be installed and in PATH");
-  }
-  Ok(())
-}
-
-fn run_command(
-  cmd: &str,
-  args: &[&str],
-  dir: &Path,
-  vars: &HashMap<String, String>,
-  debug: bool,
-) -> Result<()> {
-  let mut command = Command::new(cmd);
-  command.current_dir(dir).args(args);
-  for (k, v) in vars {
-    command.arg("-var").arg(format!("{}={}", k, v));
-  }
-  if !debug {
-    command.stdout(Stdio::null()).stderr(Stdio::null());
-  }
-  let status = command
-    .status()
-    .with_context(|| format!("Failed to execute `{}`", cmd))?;
-  if !status.success() {
-    bail!("`{}` failed with exit code {}", cmd, status);
-  }
-  Ok(())
-}
-
-struct DestroyGuard {
-  dir: PathBuf,
-  vars: HashMap<String, String>,
-  debug: bool,
-}
-
-impl Drop for DestroyGuard {
-  fn drop(&mut self) {
-    eprintln!("Destroying Terraform resources in {}", self.dir.display());
-    let mut cmd = Command::new("terraform");
-    cmd
-      .current_dir(&self.dir)
-      .arg("destroy")
-      .arg("-auto-approve");
-    for (k, v) in &self.vars {
-      cmd.arg("-var").arg(format!("{}={}", k, v));
-    }
-    if !self.debug {
-      cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    }
-    match cmd.status() {
-      Ok(status) if status.success() => {
-        eprintln!("Resources destroyed.");
-      }
-      Ok(status) => {
-        eprintln!("`terraform destroy` failed with exit code {}", status);
-      }
-      Err(err) => {
-        eprintln!("Failed to execute `terraform destroy`: {}", err);
-      }
-    }
-  }
-}
-
 fn print_help() {
   println!(
     "{} {}\n{}\n\nUSAGE:\n  atar [--debug] deploy --terraform <PATH> [--<var> <value> ...]\n  atar [--debug] undeploy --terraform <PATH> [--<var> <value> ...]\n\nFor help on the `deploy` subcommand, run `atar deploy --help`.\nFor help on the `undeploy` subcommand, run `atar undeploy --help`.",
@@ -274,4 +112,68 @@ fn print_undeploy_help() {
   println!(
     "atar undeploy\n\nDestroys an existing Terraform deployment.\n\n    USAGE:\n  atar undeploy --terraform <PATH> [--<var> <value> ...]\n\n    FLAGS:\n  --terraform <PATH>    Path to Terraform `main.tf` file\n    --<var> <value>       Terraform variable\n"
   );
+}
+
+fn run_deploy(
+  file: PathBuf,
+  vars: HashMap<String, String>,
+  debug: bool,
+) -> Result<()> {
+  // Log init/apply steps with file path and each variable on its own line
+  // Print variables once, then show placeholders for init/apply
+  println!("Variables:");
+  println!("  path: {}", file.display());
+  for (k, v) in &vars {
+    println!("  {}: {}", k, v);
+  }
+
+  let outputs = lib_deploy(&file, &vars, debug)?;
+  if !outputs.is_empty() {
+    println!("*************************** Outputs **************************");
+    for (k, v) in outputs {
+      println!("{}: {}", k, v);
+    }
+    println!("**************************************************************");
+  }
+  let guard = DestroyGuard { file, vars, debug };
+  let (tx, rx) = mpsc::channel();
+  ctrlc::set_handler(move || {
+    let _ = tx.send(());
+  })
+  .context("Failed to set Ctrl-C handler")?;
+  println!("Resources deployed. Press Ctrl+C to destroy and exit.");
+  let _ = rx.recv();
+  println!("\nCtrl+C detected: starting Terraform destroy...");
+  drop(guard);
+  Ok(())
+}
+
+fn run_undeploy(
+  file: PathBuf,
+  vars: HashMap<String, String>,
+  debug: bool,
+) -> Result<()> {
+  // Print variables once, then placeholder for destroy
+  println!("Variables:");
+  println!("  path: {}", file.display());
+  for (k, v) in &vars {
+    println!("  {}: {}", k, v);
+  }
+
+  lib_undeploy(&file, &vars, debug)?;
+  Ok(())
+}
+
+struct DestroyGuard {
+  file: PathBuf,
+  vars: HashMap<String, String>,
+  debug: bool,
+}
+
+impl Drop for DestroyGuard {
+  fn drop(&mut self) {
+    if let Err(err) = lib_undeploy(&self.file, &self.vars, self.debug) {
+      eprintln!("Failed to destroy Terraform resources: {}", err);
+    }
+  }
 }

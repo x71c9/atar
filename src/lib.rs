@@ -5,7 +5,7 @@
 //! - `undeploy`: destroys an existing Terraform configuration
 
 use anyhow::{Context, Result, bail};
-use serde_json::Value;
+use serde_json::{self, Value};
 use std::{
   collections::HashMap,
   path::Path,
@@ -31,6 +31,7 @@ fn ensure_terraform_installed() -> Result<()> {
 pub fn deploy<P: AsRef<Path>>(
   file: P,
   vars: &HashMap<String, String>,
+  debug: bool,
 ) -> Result<HashMap<String, String>> {
   ensure_terraform_installed()?;
   let file = file
@@ -42,21 +43,29 @@ pub fn deploy<P: AsRef<Path>>(
     .context("Cannot determine Terraform directory")?;
 
   // init
-  let status = Command::new("terraform")
-    .current_dir(dir)
-    .arg("init")
+  println!("Initializing Terraform...");
+
+  let mut init = Command::new("terraform");
+  init.current_dir(dir).arg("init");
+  if !debug {
+    init.stdout(Stdio::null()).stderr(Stdio::null());
+  }
+  let status = init
     .status()
     .context("Failed to execute `terraform init`")?;
   if !status.success() {
     bail!("`terraform init` failed with exit code {}", status);
   }
 
-  // apply
+  println!("Applying Terraform...");
   {
     let mut cmd = Command::new("terraform");
     cmd.current_dir(dir).arg("apply").arg("-auto-approve");
     for (k, v) in vars {
       cmd.arg("-var").arg(format!("{}={}", k, v));
+    }
+    if !debug {
+      cmd.stdout(Stdio::null()).stderr(Stdio::null());
     }
     let status = cmd
       .status()
@@ -99,6 +108,7 @@ pub fn deploy<P: AsRef<Path>>(
 pub fn undeploy<P: AsRef<Path>>(
   file: P,
   vars: &HashMap<String, String>,
+  debug: bool,
 ) -> Result<()> {
   ensure_terraform_installed()?;
   let file = file
@@ -109,10 +119,15 @@ pub fn undeploy<P: AsRef<Path>>(
     .parent()
     .context("Cannot determine Terraform directory")?;
 
+  println!("Destroying Terraform...");
+
   let mut cmd = Command::new("terraform");
   cmd.current_dir(dir).arg("destroy").arg("-auto-approve");
   for (k, v) in vars {
     cmd.arg("-var").arg(format!("{}={}", k, v));
+  }
+  if !debug {
+    cmd.stdout(Stdio::null()).stderr(Stdio::null());
   }
   let status = cmd
     .status()
@@ -120,5 +135,6 @@ pub fn undeploy<P: AsRef<Path>>(
   if !status.success() {
     bail!("`terraform destroy` failed with exit code {}", status);
   }
+  println!("All resources have been destroyed.");
   Ok(())
 }
