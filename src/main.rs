@@ -1,7 +1,8 @@
 use anyhow::{Context, Result, bail};
 use atar::{deploy as lib_deploy, undeploy as lib_undeploy};
-use ctrlc;
-use std::{collections::HashMap, env, path::PathBuf, process, sync::mpsc};
+use signal_hook::{consts::signal::{SIGINT, SIGTERM}, iterator::Signals};
+use std::{collections::HashMap, env, path::PathBuf, process, sync::mpsc, thread};
+use std::panic;
 
 fn main() {
   if let Err(err) = run() {
@@ -135,15 +136,32 @@ fn run_deploy(
     }
     println!("**************************************************************");
   }
-  let guard = DestroyGuard { file, vars, debug };
+  // Setup cleanup guard and panic hook (unwinding) after resources are deployed
+  let guard = DestroyGuard { file: file.clone(), vars: vars.clone(), debug };
+  {
+    let fh = file.clone();
+    let vh = vars.clone();
+    let dbg = debug;
+    let previous = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+      eprintln!("panic: {:?}, cleaning up Terraform...", info);
+      if let Err(err) = lib_undeploy(&fh, &vh, dbg) {
+        eprintln!("cleanup after panic failed: {}", err);
+      }
+      previous(info);
+    }));
+  }
   let (tx, rx) = mpsc::channel();
-  ctrlc::set_handler(move || {
-    let _ = tx.send(());
-  })
-  .context("Failed to set Ctrl-C handler")?;
-  println!("Resources deployed. Press Ctrl+C to destroy and exit.");
+  let mut signals = Signals::new(&[SIGINT, SIGTERM]).context("Failed to set signal handler")?;
+  thread::spawn(move || {
+    for _ in signals.forever() {
+      let _ = tx.send(());
+      break;
+    }
+  });
+  println!("Resources deployed.\n\nPress Ctrl+C or send SIGTERM to destroy and exit.");
   let _ = rx.recv();
-  println!("\nCtrl+C detected: starting Terraform destroy...");
+  println!("\nSignal received: starting Terraform destroy...");
   drop(guard);
   Ok(())
 }
