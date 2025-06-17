@@ -8,9 +8,12 @@ use anyhow::{Context, Result, bail};
 use serde_json::{self, Value};
 use std::{
   collections::HashMap,
-  path::Path,
+  env,
+  fs,
+  path::{Path, PathBuf},
   process::{Command, Stdio},
 };
+use sha2::{Digest, Sha256};
 
 fn ensure_terraform_installed() -> Result<()> {
   let status = Command::new("terraform")
@@ -23,6 +26,36 @@ fn ensure_terraform_installed() -> Result<()> {
     bail!("Terraform must be installed and in PATH");
   }
   Ok(())
+}
+
+/// Recursively copy a directory tree from `src` to `dst`.
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+  fs::create_dir_all(dst).with_context(|| format!("Failed to create directory {:?}", dst))?;
+  for entry in fs::read_dir(src).with_context(|| format!("Failed to read directory {:?}", src))? {
+    let entry = entry.with_context(|| format!("Failed to access entry in {:?}", src))?;
+    let path = entry.path();
+    let dest = dst.join(entry.file_name());
+    if path.is_dir() {
+      copy_dir_recursive(&path, &dest)?;
+    } else {
+      fs::copy(&path, &dest)
+        .with_context(|| format!("Failed to copy file {:?} to {:?}", path, dest))?;
+    }
+  }
+  Ok(())
+}
+
+/// Prepare a deterministic temp workspace based on the source directory path.
+fn prepare_work_dir(src_dir: &Path) -> Result<PathBuf> {
+  let mut hasher = Sha256::new();
+  hasher.update(src_dir.to_string_lossy().as_bytes());
+  let hash = format!("{:x}", hasher.finalize());
+  let work = env::temp_dir().join("atar").join(hash);
+  if !work.exists() {
+    println!("Copying Terraform files to temporary directory {}", work.display());
+    copy_dir_recursive(src_dir, &work)?;
+  }
+  Ok(work)
 }
 
 /// Apply Terraform config at `file` with provided `vars`.
@@ -38,15 +71,16 @@ pub fn deploy<P: AsRef<Path>>(
     .as_ref()
     .canonicalize()
     .context("Failed to canonicalize Terraform path")?;
-  let dir = file
+  let src_dir = file
     .parent()
     .context("Cannot determine Terraform directory")?;
+  let work_dir = prepare_work_dir(src_dir)?;
 
   // init
   println!("Initializing Terraform...");
 
   let mut init = Command::new("terraform");
-  init.current_dir(dir).arg("init");
+  init.current_dir(&work_dir).arg("init");
   if !debug {
     init.stdout(Stdio::null()).stderr(Stdio::null());
   }
@@ -60,7 +94,7 @@ pub fn deploy<P: AsRef<Path>>(
   println!("Applying Terraform...");
   {
     let mut cmd = Command::new("terraform");
-    cmd.current_dir(dir).arg("apply").arg("-auto-approve");
+    cmd.current_dir(&work_dir).arg("apply").arg("-auto-approve");
     for (k, v) in vars {
       cmd.arg("-var").arg(format!("{}={}", k, v));
     }
@@ -77,7 +111,7 @@ pub fn deploy<P: AsRef<Path>>(
 
   // output JSON
   let output = Command::new("terraform")
-    .current_dir(dir)
+    .current_dir(&work_dir)
     .arg("output")
     .arg("-json")
     .output()
@@ -115,14 +149,15 @@ pub fn undeploy<P: AsRef<Path>>(
     .as_ref()
     .canonicalize()
     .context("Failed to canonicalize Terraform path")?;
-  let dir = file
+  let src_dir = file
     .parent()
     .context("Cannot determine Terraform directory")?;
+  let work_dir = prepare_work_dir(src_dir)?;
 
   println!("Destroying Terraform...");
 
   let mut cmd = Command::new("terraform");
-  cmd.current_dir(dir).arg("destroy").arg("-auto-approve");
+  cmd.current_dir(&work_dir).arg("destroy").arg("-auto-approve");
   for (k, v) in vars {
     cmd.arg("-var").arg(format!("{}={}", k, v));
   }
