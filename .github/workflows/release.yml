@@ -176,15 +176,19 @@ jobs:
           SCRIPT
 
   publish-debian:
-    name: Publish Debian package to GitHub Packages
+    name: Publish Debian packages to GitHub Packages
     needs: release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust targets
+        run: |
+          rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-musl
 
       - name: Install cargo-deb and jq
         run: |
@@ -192,31 +196,36 @@ jobs:
           sudo apt-get install -y jq
           cargo install cargo-deb
 
-      - name: Build Debian package
+      - name: Build Debian packages
         run: |
           version=${GITHUB_REF_NAME#v}
-          cargo deb --output target/debian/atar_${version}_amd64.deb
+          mkdir -p target/debian
+          cargo deb --target x86_64-unknown-linux-gnu \
+            --output target/debian/atar_${version}_amd64.deb
+          cargo deb --target aarch64-unknown-linux-musl \
+            --output target/debian/atar_${version}_arm64.deb
 
-      - name: Publish Debian package to GitHub Packages
+      - name: Publish Debian packages
         run: |
           owner=${{ github.repository_owner }}
           version=${GITHUB_REF_NAME#v}
-          deb_file="target/debian/atar_${version}_amd64.deb"
-          # Create a new package version
+          # create a new package version
           create_resp=$(curl -s -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/users/${owner}/packages/deb/atar/versions \
             -d '{"name":"'"${version}"'"}')
           version_id=$(echo "$create_resp" | jq -r .id)
-          # Upload the .deb file
-          curl -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary @"${deb_file}" \
-            "https://uploads.github.com/users/${owner}/packages/deb/atar/versions/${version_id}/files?name=$(basename ${deb_file})"
-          # Publish the package version
+          # upload both .deb files
+          for deb in target/debian/atar_${version}_*.deb; do
+            curl -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"${deb}" \
+              "https://uploads.github.com/users/${owner}/packages/deb/atar/versions/${version_id}/files?name=$(basename ${deb})"
+          done
+          # finally publish the version
           curl -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
