@@ -174,3 +174,50 @@ jobs:
           git commit -m "chore(release): release ${version}"
           GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" git push origin master
           SCRIPT
+
+  publish-debian:
+    name: Publish Debian package to GitHub Packages
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deb and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          cargo install cargo-deb
+
+      - name: Build Debian package
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          cargo deb --output target/debian/atar_${version}_amd64.deb
+
+      - name: Publish Debian package to GitHub Packages
+        run: |
+          owner=${{ github.repository_owner }}
+          version=${GITHUB_REF_NAME#v}
+          deb_file="target/debian/atar_${version}_amd64.deb"
+          # Create a new package version
+          create_resp=$(curl -s -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/users/${owner}/packages/deb/atar/versions \
+            -d '{"name":"'"${version}"'"}')
+          version_id=$(echo "$create_resp" | jq -r .id)
+          # Upload the .deb file
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"${deb_file}" \
+            "https://uploads.github.com/users/${owner}/packages/deb/atar/versions/${version_id}/files?name=$(basename ${deb_file})"
+          # Publish the package version
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/users/${owner}/packages/deb/atar/versions/${version_id}/publish
