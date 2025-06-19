@@ -1,14 +1,19 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use atar::{deploy as lib_deploy, undeploy as lib_undeploy};
-use signal_hook::{consts::signal::{SIGINT, SIGTERM}, iterator::Signals};
-use std::{collections::HashMap, env, path::PathBuf, process, sync::mpsc, thread};
+use signal_hook::{
+  consts::signal::{SIGINT, SIGTERM},
+  iterator::Signals,
+};
 use std::panic;
+use std::{
+  collections::HashMap, env, path::PathBuf, process, sync::mpsc, thread,
+};
 
 fn main() {
-  if let Err(err) = run() {
+  run().unwrap_or_else(|err| {
     eprintln!("Error: {}", err);
     process::exit(1);
-  }
+  })
 }
 
 fn run() -> Result<()> {
@@ -28,17 +33,17 @@ fn run() -> Result<()> {
       print_deploy_help();
       return Ok(());
     }
-    let mut terraform_file: Option<PathBuf> = None;
+    let mut terraform_file_path: Option<PathBuf> = None;
     let mut vars: HashMap<String, String> = HashMap::new();
     let mut i = 2;
     while i < args.len() {
       match args[i].as_str() {
-        "--terraform" => {
+        "--terraform-path" | "-t" => {
           i += 1;
           if i >= args.len() {
-            bail!("--terraform requires a path");
+            bail!("--terraform-path requires a path");
           }
-          terraform_file = Some(PathBuf::from(&args[i]));
+          terraform_file_path = Some(PathBuf::from(&args[i]));
         }
         arg if arg.starts_with("--") => {
           let key = arg.trim_start_matches("--").to_string();
@@ -52,26 +57,26 @@ fn run() -> Result<()> {
       }
       i += 1;
     }
-    let tf_file =
-      terraform_file.context("`--terraform` argument is required")?;
-    return run_deploy(tf_file, vars, debug);
+    let tf_file_path =
+      terraform_file_path.context("`--terraform-path` argument is required")?;
+    return run_deploy(tf_file_path, vars, debug);
   }
   if args[1] == "undeploy" {
     if args.len() >= 3 && (args[2] == "-h" || args[2] == "--help") {
       print_undeploy_help();
       return Ok(());
     }
-    let mut terraform_file: Option<PathBuf> = None;
+    let mut terraform_file_path: Option<PathBuf> = None;
     let mut vars: HashMap<String, String> = HashMap::new();
     let mut i = 2;
     while i < args.len() {
       match args[i].as_str() {
-        "--terraform" => {
+        "--terraform-path" | "-t" => {
           i += 1;
           if i >= args.len() {
-            bail!("--terraform requires a path");
+            bail!("--terraform-path requires a path");
           }
-          terraform_file = Some(PathBuf::from(&args[i]));
+          terraform_file_path = Some(PathBuf::from(&args[i]));
         }
         arg if arg.starts_with("--") => {
           let key = arg.trim_start_matches("--").to_string();
@@ -85,9 +90,9 @@ fn run() -> Result<()> {
       }
       i += 1;
     }
-    let tf_file =
-      terraform_file.context("`--terraform` argument is required")?;
-    return run_undeploy(tf_file, vars, debug);
+    let tf_file_path =
+      terraform_file_path.context("`--terraform-path` argument is required")?;
+    return run_undeploy(tf_file_path, vars, debug);
   }
   eprintln!("Unknown command: {}", args[1]);
   print_help();
@@ -96,7 +101,12 @@ fn run() -> Result<()> {
 
 fn print_help() {
   println!(
-    "{} {}\n{}\n\nUSAGE:\n  atar [--debug] deploy --terraform <PATH> [--<var> <value> ...]\n  atar [--debug] undeploy --terraform <PATH> [--<var> <value> ...]\n\nFor help on the `deploy` subcommand, run `atar deploy --help`.\nFor help on the `undeploy` subcommand, run `atar undeploy --help`.",
+    "{} {}\n{}\n\n\
+         USAGE:\n  atar [--debug] deploy \\\n    --terraform <PATH> \\\n    \
+         [--<var> <value> ...]\n  atar [--debug] undeploy \\\n    \
+         --terraform <PATH> \\\n    [--<var> <value> ...]\n\n\
+         For help on the `deploy` subcommand, run:\n  atar deploy --help\n\
+         For help on the `undeploy` subcommand, run:\n  atar undeploy --help",
     env!("CARGO_PKG_NAME"),
     env!("CARGO_PKG_VERSION"),
     env!("CARGO_PKG_DESCRIPTION"),
@@ -105,13 +115,21 @@ fn print_help() {
 
 fn print_deploy_help() {
   println!(
-    "atar deploy\n\nDeploys a Terraform module, waits until interrupted, then destroys it.\n\n    USAGE:\n  atar deploy --terraform <PATH> [--<var> <value> ...]\n\n    FLAGS:\n  --terraform <PATH>    Path to Terraform `main.tf` file\n    --<var> <value>       Terraform variable\n"
-  );
+        "atar deploy\n\n\
+         Deploys a Terraform module, waits until interrupted, then destroys it.\n\n\
+         USAGE:\n  atar deploy --terraform <PATH> [--<var> <value> ...]\n\n\
+         FLAGS:\n  --terraform <PATH>    Path to Terraform `main.tf` file\n  \
+         --<var> <value>       Terraform variable\n"
+    );
 }
 
 fn print_undeploy_help() {
   println!(
-    "atar undeploy\n\nDestroys an existing Terraform deployment.\n\n    USAGE:\n  atar undeploy --terraform <PATH> [--<var> <value> ...]\n\n    FLAGS:\n  --terraform <PATH>    Path to Terraform `main.tf` file\n    --<var> <value>       Terraform variable\n"
+    "atar undeploy\n\n\
+         Destroys an existing Terraform deployment.\n\n\
+         USAGE:\n  atar undeploy --terraform <PATH> [--<var> <value> ...]\n\n\
+         FLAGS:\n  --terraform <PATH>    Path to Terraform `main.tf` file\n  \
+         --<var> <value>       Terraform variable\n"
   );
 }
 
@@ -137,7 +155,11 @@ fn run_deploy(
     println!("**************************************************************");
   }
   // Setup cleanup guard and panic hook (unwinding) after resources are deployed
-  let guard = DestroyGuard { file: file.clone(), vars: vars.clone(), debug };
+  let guard = DestroyGuard {
+    file: file.clone(),
+    vars: vars.clone(),
+    debug,
+  };
   {
     let fh = file.clone();
     let vh = vars.clone();
@@ -152,14 +174,17 @@ fn run_deploy(
     }));
   }
   let (tx, rx) = mpsc::channel();
-  let mut signals = Signals::new(&[SIGINT, SIGTERM]).context("Failed to set signal handler")?;
+  let mut signals =
+    Signals::new(&[SIGINT, SIGTERM]).context("Failed to set signal handler")?;
   thread::spawn(move || {
     for _ in signals.forever() {
       let _ = tx.send(());
       break;
     }
   });
-  println!("Resources deployed.\n\nPress Ctrl+C or send SIGTERM to destroy and exit.");
+  println!(
+    "Resources deployed.\n\nPress Ctrl+C or send SIGTERM to destroy and exit."
+  );
   let _ = rx.recv();
   println!("\nSignal received: starting Terraform destroy...");
   drop(guard);
@@ -190,8 +215,8 @@ struct DestroyGuard {
 
 impl Drop for DestroyGuard {
   fn drop(&mut self) {
-    if let Err(err) = lib_undeploy(&self.file, &self.vars, self.debug) {
+    lib_undeploy(&self.file, &self.vars, self.debug).unwrap_or_else(|err| {
       eprintln!("Failed to destroy Terraform resources: {}", err);
-    }
+    });
   }
 }
