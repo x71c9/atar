@@ -188,12 +188,12 @@ jobs:
 
       - name: Add Rust targets
         run: |
-          rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-musl
+          rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
 
-      - name: Install cargo-deb and jq
+      - name: Install cargo-deb, jq, and cross-compilers
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq
+          sudo apt-get install -y jq gcc-aarch64-linux-gnu
           cargo install cargo-deb
 
       - name: Build Debian packages
@@ -202,7 +202,7 @@ jobs:
           mkdir -p target/debian
           cargo deb --target x86_64-unknown-linux-gnu \
             --output target/debian/atar_${version}_amd64.deb
-          cargo deb --target aarch64-unknown-linux-musl \
+          cargo deb --target aarch64-unknown-linux-gnu \
             --output target/debian/atar_${version}_arm64.deb
 
       - name: Publish Debian packages
