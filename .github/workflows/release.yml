@@ -1,0 +1,176 @@
+---
+name: Release Binaries
+on:
+  push:
+    tags:
+      - "v*.*.*"
+permissions:
+  contents: write # Required to create a GitHub Release
+jobs:
+  build-macos:
+    name: Build macOS Binaries
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Rename and compress binary
+        run: |
+          mkdir -p bin
+          cp target/${{ matrix.target }}/release/atar bin/atar
+          tar -czvf bin/atar-${{ matrix.target }}.tar.gz -C bin atar
+      - name: Upload binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: atar-${{ matrix.target }}
+          path: bin/atar-${{ matrix.target }}.tar.gz
+  build-linux:
+    name: Build Arch Linux Packages
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cross
+        run: cargo install cross
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build binary with cross
+        run: cross build --release --target ${{ matrix.target }}
+      - name: Rename and compress binary
+        run: |
+          mkdir -p bin
+          cp target/${{ matrix.target }}/release/atar bin/atar
+          tar -czvf bin/atar-${{ matrix.target }}.tar.gz -C bin atar
+      - name: Upload binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: atar-${{ matrix.target }}
+          path: bin/atar-${{ matrix.target }}.tar.gz
+  release:
+    name: Create GitHub Release
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Download macOS artifacts (aarch64)
+        uses: actions/download-artifact@v4
+        with:
+          name: atar-aarch64-apple-darwin
+          path: bin
+      - name: Download macOS artifacts (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: atar-x86_64-apple-darwin
+          path: bin
+      - name: Download Linux artifacts (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: atar-x86_64-unknown-linux-gnu
+          path: bin
+      - name: Download Linux artifacts (aarch64)
+        uses: actions/download-artifact@v4
+        with:
+          name: atar-aarch64-unknown-linux-gnu
+          path: bin
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bin/**
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false
+      - name: Trigger Homebrew Tap Update
+        run: |
+          curl -X POST -H "Accept: application/vnd.github.v3+json" \
+               -H "Authorization: token ${{ secrets.HOMEBREW_PAT }}" \
+               https://api.github.com/repos/x71c9/homebrew-x71c9/dispatches \
+               -d '{"event_type": "update-atar", "client_payload": {"tag": "${{ github.ref_name }}"}}'
+  update-aur:
+    name: Update AUR
+    needs: release
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm base-devel coreutils curl git openssh sudo
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SECRET_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+      - name: Checkout AUR Repository
+        run: |
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" \
+            git clone ssh://aur@aur.archlinux.org/atar.git aur-atar
+      - name: Create non-root build user
+        run: |
+          useradd -m builduser
+          echo "builduser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+          chown -R builduser:builduser aur-atar
+          mkdir -p /home/builduser/.ssh
+          cp ~/.ssh/id_ed25519 /home/builduser/.ssh/id_ed25519
+          chown -R builduser:builduser /home/builduser/.ssh
+          chmod 600 /home/builduser/.ssh/id_ed25519
+      - name: Update PKGBUILD and Push to AUR
+        run: |
+          sudo -E -H -u builduser bash <<'SCRIPT'
+          cd aur-atar
+          version=${GITHUB_REF_NAME#v}
+          curl -OL https://codeload.github.com/x71c9/atar/tar.gz/refs/tags/v${version}
+          sha256sum=$(sha256sum v${version} | awk '{print $1}')
+          cat > PKGBUILD <<EOF
+          pkgname=atar
+          pkgver=${version}
+          pkgrel=1
+          pkgdesc="The fastest and lightest bookmark manager CLI written in Rust"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/x71c9/atar"
+          license=('MIT')
+          depends=('glibc')
+          makedepends=('rust')
+
+          source=("\$pkgname-\$pkgver.tar.gz::https://codeload.github.com/x71c9/\$pkgname/tar.gz/refs/tags/v\$pkgver")
+          sha256sums=("${sha256sum}")
+
+          prepare() {
+            cd "\$pkgname-\$pkgver"
+            export RUSTUP_TOOLCHAIN=stable
+            cargo fetch --locked --target "\$(rustc -vV | sed -n 's/host: //p')"
+          }
+
+          build() {
+            cd "\$pkgname-\$pkgver"
+            export RUSTUP_TOOLCHAIN=stable
+            export CARGO_TARGET_DIR=target
+            cargo build --frozen --release --all-features
+          } 
+          package() {
+            cd "\$pkgname-\$pkgver"
+            install -Dm0755 -t "\$pkgdir/usr/bin/" "target/release/\$pkgname"
+          }
+          EOF
+          cat PKGBUILD
+          makepkg --printsrcinfo > .SRCINFO
+          git config user.email "mail@x71c9.com"
+          git config user.name "x71c9"
+          git add .
+          git commit -m "chore(release): release ${version}"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" git push origin master
+          SCRIPT
