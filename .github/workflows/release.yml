@@ -186,23 +186,25 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Add Rust targets
-        run: |
-          rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
-
-      - name: Install cargo-deb, jq, and cross-compilers
+      - name: Install cross, cargo-deb and jq
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq gcc-aarch64-linux-gnu
+          sudo apt-get install -y jq
+          cargo install cross
           cargo install cargo-deb
 
-      - name: Build Debian packages
+      - name: Cross-build binaries
+        run: |
+          cross build --release --target x86_64-unknown-linux-gnu
+          cross build --release --target aarch64-unknown-linux-gnu
+
+      - name: Package Debian artifacts
         run: |
           version=${GITHUB_REF_NAME#v}
           mkdir -p target/debian
-          cargo deb --target x86_64-unknown-linux-gnu \
+          cargo deb --no-build --target x86_64-unknown-linux-gnu \
             --output target/debian/atar_${version}_amd64.deb
-          cargo deb --target aarch64-unknown-linux-gnu \
+          cargo deb --no-build --target aarch64-unknown-linux-gnu \
             --output target/debian/atar_${version}_arm64.deb
 
       - name: Publish Debian packages
