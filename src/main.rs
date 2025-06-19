@@ -102,11 +102,12 @@ fn run() -> Result<()> {
 fn print_help() {
   println!(
     "{} {}\n{}\n\n\
-         USAGE:\n  atar [--debug] deploy \\\n    --terraform <PATH> \\\n    \
-         [--<var> <value> ...]\n  atar [--debug] undeploy \\\n    \
-         --terraform <PATH> \\\n    [--<var> <value> ...]\n\n\
-         For help on the `deploy` subcommand, run:\n  atar deploy --help\n\
-         For help on the `undeploy` subcommand, run:\n  atar undeploy --help",
+     USAGE:\n\n\
+     atar [--debug] deploy --terraform-path <PATH> [--<var> <value> ...]\n\n\
+     If undeploy fails when exiting, run:\n\n\
+     atar [--debug] undeploy --terraform-path <PATH> [--<var> <value> ...]\n\n\
+     For help on the `deploy` subcommand, run:\natar deploy --help\n\n\
+     For help on the `undeploy` subcommand, run:\natar undeploy --help",
     env!("CARGO_PKG_NAME"),
     env!("CARGO_PKG_VERSION"),
     env!("CARGO_PKG_DESCRIPTION"),
