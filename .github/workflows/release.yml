@@ -105,7 +105,6 @@ jobs:
     container:
       image: archlinux:latest
     steps:
-    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Install dependencies
