@@ -100,7 +100,7 @@ jobs:
                https://api.github.com/repos/x71c9/homebrew-x71c9/dispatches \
                -d '{"event_type": "update-atar", "client_payload": {"tag": "${{ github.ref_name }}"}}'
   update-aur:
-    name: Update AUR
+    name: Publish to AUR
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
@@ -175,7 +175,7 @@ jobs:
           SCRIPT
 
   publish-debian:
-    name: Publish Debian to Cloudsmith
+    name: Publish Debian using Cloudsmith
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -218,7 +218,7 @@ jobs:
           cloudsmith push deb x71c9/atar/any-distro/any-version target/debian/atar_${version}_arm64.deb
 
   publish-fedora:
-    name: Publish Fedora
+    name: Publish to Fedora COPR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
