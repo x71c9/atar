@@ -235,6 +235,6 @@ jobs:
             echo "Uploading $package"
             curl -u "$CLOUDSMITH_API_KEY:" \
               -F "package=@${package}" \
-              https://upload.cloudsmith.io/atar/atar/
+              https://upload.cloudsmith.io/v1/packages/x71c9/atar/upload/
           done
 
