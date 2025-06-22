@@ -231,10 +231,18 @@ jobs:
         env:
           CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
         run: |
-          for package in target/debian/*.deb target/rpm/*.rpm; do
-            echo "Uploading $package"
-            curl -u "$CLOUDSMITH_API_KEY:" \
-              -F "package=@${package}" \
-              https://upload.cloudsmith.io/v1/packages/x71c9/atar/upload/
+          # Upload .deb packages
+          for deb in target/debian/*.deb; do
+            echo "Uploading Debian package: $deb"
+            curl --fail --show-error --silent -u "$CLOUDSMITH_API_KEY:" \
+              -F "package=@${deb}" \
+              https://api.cloudsmith.io/v1/packages/x71c9/atar/upload/deb/
           done
 
+          # Upload .rpm packages
+          for rpm in target/rpm/*.rpm; do
+            echo "Uploading RPM package: $rpm"
+            curl --fail --show-error --silent -u "$CLOUDSMITH_API_KEY:" \
+              -F "package=@${rpm}" \
+              https://api.cloudsmith.io/v1/packages/x71c9/atar/upload/rpm/
+          done
