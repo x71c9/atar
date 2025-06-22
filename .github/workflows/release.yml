@@ -186,21 +186,16 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cross, cargo-deb, jq and cross-toolchain
+      - name: Install tools for cross-build and packaging
         run: |
-          sudo dpkg --add-architecture arm64
           sudo apt-get update
-          sudo apt-get install -y \
-            jq \
-            gcc-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu \
-            libc6-dev:arm64 \
-            libgcc1:arm64
+          sudo apt-get install -y jq build-essential
           cargo install cross
           cargo install cargo-deb
 
-      - name: Cross-build binaries
+      - name: Add Rust targets and cross-build binaries
         run: |
+          rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
           cross build --release --target x86_64-unknown-linux-gnu
           cross build --release --target aarch64-unknown-linux-gnu
 
