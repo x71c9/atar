@@ -129,16 +129,18 @@ jobs:
           chmod 600 /home/builduser/.ssh/id_ed25519
       - name: Update PKGBUILD and Push to AUR
         run: |
-          sudo -E -H -u builduser bash <<'SCRIPT'
+          rustdescr=$(grep '^description' Cargo.toml | sed 's/description = "\(.*\)"/\1/')
+          sudo -E -H -u builduser env RUST_DESCRIPTION="$rustdescr" bash <<'SCRIPT'
           cd aur-atar
           version=${GITHUB_REF_NAME#v}
           curl -OL https://codeload.github.com/x71c9/atar/tar.gz/refs/tags/v${version}
           sha256sum=$(sha256sum v${version} | awk '{print $1}')
+          export RUST_DESCRIPTION="${rustdescr}"
           cat > PKGBUILD <<EOF
           pkgname=atar
           pkgver=${version}
           pkgrel=1
-          pkgdesc="Ephemeral Terraform runner that applies a configuration on start, displays output variables, and automatically destroys all resources on exit or failure."
+          pkgdesc="${RUST_DESCRIPTION}"
           arch=('x86_64' 'aarch64')
           url="https://github.com/x71c9/atar"
           license=('MIT')
