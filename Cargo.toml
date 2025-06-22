@@ -1,7 +1,7 @@
 [package]
 name = "atar"
 version = "0.1.22"
-edition = "2024"
+edition = "2021"
 authors = ["Andrea Reni <mail@x71c9.com>"]
 description = "Ephemeral Terraform runner: applies on start, auto-destroys on exit or failure."
 license = "MIT OR Apache-2.0"
