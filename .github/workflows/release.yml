@@ -176,7 +176,7 @@ jobs:
           SCRIPT
 
   publish-debian:
-    name: Publish Debian packages to GitHub Packages
+    name: Publish Debian and RPM packages to Cloudsmith
     needs: release
     runs-on: ubuntu-latest
     steps:
@@ -189,9 +189,10 @@ jobs:
       - name: Install tools for cross-build and packaging
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq build-essential
+          sudo apt-get install -y jq build-essential rpm
           cargo install cross
           cargo install cargo-deb
+          cargo install cargo-generate-rpm
 
       - name: Add Rust targets and cross-build binaries
         run: |
@@ -208,28 +209,32 @@ jobs:
           cargo deb --no-strip --no-build --target aarch64-unknown-linux-gnu \
             --output target/debian/atar_${version}_arm64.deb
 
-      - name: Publish Debian packages
+      - name: Package RPM artifacts
         run: |
-          owner=${{ github.repository_owner }}
           version=${GITHUB_REF_NAME#v}
-          # create a new package version
-          create_resp=$(curl -s -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/users/${owner}/packages/deb/atar/versions \
-            -d '{"name":"'"${version}"'"}')
-          version_id=$(echo "$create_resp" | jq -r .id)
-          # upload both .deb files
-          for deb in target/debian/atar_${version}_*.deb; do
-            curl -X POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"${deb}" \
-              "https://uploads.github.com/users/${owner}/packages/deb/atar/versions/${version_id}/files?name=$(basename ${deb})"
+          mkdir -p target/rpm
+
+          # Build RPM for x86_64
+          mkdir -p target/rpm-root/usr/bin
+          cp target/x86_64-unknown-linux-gnu/release/atar target/rpm-root/usr/bin/atar
+          cargo generate-rpm --target x86_64-unknown-linux-gnu --install-path target/rpm-root \
+            --output target/rpm/atar-${version}-1.x86_64.rpm
+
+          # Build RPM for aarch64
+          rm -rf target/rpm-root
+          mkdir -p target/rpm-root/usr/bin
+          cp target/aarch64-unknown-linux-gnu/release/atar target/rpm-root/usr/bin/atar
+          cargo generate-rpm --target aarch64-unknown-linux-gnu --install-path target/rpm-root \
+            --output target/rpm/atar-${version}-1.aarch64.rpm
+
+      - name: Upload .deb and .rpm to Cloudsmith
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          for package in target/debian/*.deb target/rpm/*.rpm; do
+            echo "Uploading $package"
+            curl -u "$CLOUDSMITH_API_KEY:" \
+              -F "package=@${package}" \
+              https://upload.cloudsmith.io/atar/atar/
           done
-          # finally publish the version
-          curl -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/users/${owner}/packages/deb/atar/versions/${version_id}/publish
+
