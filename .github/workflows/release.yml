@@ -7,98 +7,98 @@ on:
 permissions:
   contents: write # Required to create a GitHub Release
 jobs:
-  # build-macos:
-  #   name: Build macOS Binaries
-  #   runs-on: macos-latest
-  #   strategy:
-  #     matrix:
-  #       target: [aarch64-apple-darwin, x86_64-apple-darwin]
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-  #     - name: Install Rust
-  #       uses: dtolnay/rust-toolchain@stable
-  #     - name: Add target
-  #       run: rustup target add ${{ matrix.target }}
-  #     - name: Build binary
-  #       run: cargo build --release --target ${{ matrix.target }}
-  #     - name: Rename and compress binary
-  #       run: |
-  #         mkdir -p bin
-  #         cp target/${{ matrix.target }}/release/atar bin/atar
-  #         tar -czvf bin/atar-${{ matrix.target }}.tar.gz -C bin atar
-  #     - name: Upload binary as artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: atar-${{ matrix.target }}
-  #         path: bin/atar-${{ matrix.target }}.tar.gz
-  # build-linux:
-  #   name: Build Arch Linux Packages
-  #   runs-on: ubuntu-latest
-  #   strategy:
-  #     matrix:
-  #       target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-  #     - name: Install Rust
-  #       uses: dtolnay/rust-toolchain@stable
-  #     - name: Install cross
-  #       run: cargo install cross
-  #     - name: Add target
-  #       run: rustup target add ${{ matrix.target }}
-  #     - name: Build binary with cross
-  #       run: cross build --release --target ${{ matrix.target }}
-  #     - name: Rename and compress binary
-  #       run: |
-  #         mkdir -p bin
-  #         cp target/${{ matrix.target }}/release/atar bin/atar
-  #         tar -czvf bin/atar-${{ matrix.target }}.tar.gz -C bin atar
-  #     - name: Upload binary as artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: atar-${{ matrix.target }}
-  #         path: bin/atar-${{ matrix.target }}.tar.gz
-  # release:
-  #   name: Create GitHub Release
-  #   needs: [build-macos, build-linux]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-  #     - name: Download macOS artifacts (aarch64)
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: atar-aarch64-apple-darwin
-  #         path: bin
-  #     - name: Download macOS artifacts (x86_64)
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: atar-x86_64-apple-darwin
-  #         path: bin
-  #     - name: Download Linux artifacts (x86_64)
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: atar-x86_64-unknown-linux-gnu
-  #         path: bin
-  #     - name: Download Linux artifacts (aarch64)
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: atar-aarch64-unknown-linux-gnu
-  #         path: bin
-  #     - name: Create GitHub Release
-  #       uses: softprops/action-gh-release@v2
-  #       with:
-  #         files: bin/**
-  #         token: ${{ secrets.GITHUB_TOKEN }}
-  #         draft: false
-  #         prerelease: false
-  #     - name: Trigger Homebrew Tap Update
-  #       run: |
-  #         curl -X POST -H "Accept: application/vnd.github.v3+json" \
-  #              -H "Authorization: token ${{ secrets.HOMEBREW_PAT }}" \
-  #              https://api.github.com/repos/x71c9/homebrew-x71c9/dispatches \
-  #              -d '{"event_type": "update-atar", "client_payload": {"tag": "${{ github.ref_name }}"}}'
+  build-macos:
+    name: Build macOS Binaries
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Rename and compress binary
+        run: |
+          mkdir -p bin
+          cp target/${{ matrix.target }}/release/atar bin/atar
+          tar -czvf bin/atar-${{ matrix.target }}.tar.gz -C bin atar
+      - name: Upload binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: atar-${{ matrix.target }}
+          path: bin/atar-${{ matrix.target }}.tar.gz
+  build-linux:
+    name: Build Arch Linux Packages
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cross
+        run: cargo install cross
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build binary with cross
+        run: cross build --release --target ${{ matrix.target }}
+      - name: Rename and compress binary
+        run: |
+          mkdir -p bin
+          cp target/${{ matrix.target }}/release/atar bin/atar
+          tar -czvf bin/atar-${{ matrix.target }}.tar.gz -C bin atar
+      - name: Upload binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: atar-${{ matrix.target }}
+          path: bin/atar-${{ matrix.target }}.tar.gz
+  release:
+    name: Create GitHub Release
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Download macOS artifacts (aarch64)
+        uses: actions/download-artifact@v4
+        with:
+          name: atar-aarch64-apple-darwin
+          path: bin
+      - name: Download macOS artifacts (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: atar-x86_64-apple-darwin
+          path: bin
+      - name: Download Linux artifacts (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: atar-x86_64-unknown-linux-gnu
+          path: bin
+      - name: Download Linux artifacts (aarch64)
+        uses: actions/download-artifact@v4
+        with:
+          name: atar-aarch64-unknown-linux-gnu
+          path: bin
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bin/**
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false
+      - name: Trigger Homebrew Tap Update
+        run: |
+          curl -X POST -H "Accept: application/vnd.github.v3+json" \
+               -H "Authorization: token ${{ secrets.HOMEBREW_PAT }}" \
+               https://api.github.com/repos/x71c9/homebrew-x71c9/dispatches \
+               -d '{"event_type": "update-atar", "client_payload": {"tag": "${{ github.ref_name }}"}}'
   update-aur:
     name: Publish to AUR
     runs-on: ubuntu-latest
@@ -179,84 +179,84 @@ jobs:
           GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" git push origin master
           SCRIPT
 
-  #publish-debian:
-  #  name: Publish Debian using Cloudsmith
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - name: Checkout repository
-  #      uses: actions/checkout@v4
+  publish-debian:
+    name: Publish Debian using Cloudsmith
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  #    - name: Install Rust toolchain
-  #      uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-  #    - name: Install tools for cross-build and packaging
-  #      run: |
-  #        sudo apt-get update
-  #        sudo apt-get install -y build-essential jq python3-pip pipx
-  #        pipx ensurepath
-  #        source ~/.bashrc
-  #        pipx install cloudsmith-cli
-  #        cargo install cross
-  #        cargo install cargo-deb
+      - name: Install tools for cross-build and packaging
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq python3-pip pipx
+          pipx ensurepath
+          source ~/.bashrc
+          pipx install cloudsmith-cli
+          cargo install cross
+          cargo install cargo-deb
 
-  #    - name: Add Rust targets and cross-build binaries
-  #      run: |
-  #        rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
-  #        cross build --release --target x86_64-unknown-linux-gnu
-  #        cross build --release --target aarch64-unknown-linux-gnu
+      - name: Add Rust targets and cross-build binaries
+        run: |
+          rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+          cross build --release --target x86_64-unknown-linux-gnu
+          cross build --release --target aarch64-unknown-linux-gnu
 
-  #    - name: Package Debian artifacts
-  #      run: |
-  #        version=${GITHUB_REF_NAME#v}
-  #        mkdir -p target/debian
-  #        cargo deb --no-strip --no-build --target x86_64-unknown-linux-gnu \
-  #          --output target/debian/atar_${version}_amd64.deb
-  #        cargo deb --no-strip --no-build --target aarch64-unknown-linux-gnu \
-  #          --output target/debian/atar_${version}_arm64.deb
+      - name: Package Debian artifacts
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          mkdir -p target/debian
+          cargo deb --no-strip --no-build --target x86_64-unknown-linux-gnu \
+            --output target/debian/atar_${version}_amd64.deb
+          cargo deb --no-strip --no-build --target aarch64-unknown-linux-gnu \
+            --output target/debian/atar_${version}_arm64.deb
 
-  #    - name: Upload .deb to Cloudsmith
-  #      env:
-  #        CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-  #      run: |
-  #        version=${GITHUB_REF_NAME#v}
-  #        cloudsmith push deb x71c9/atar/any-distro/any-version target/debian/atar_${version}_amd64.deb
-  #        cloudsmith push deb x71c9/atar/any-distro/any-version target/debian/atar_${version}_arm64.deb
+      - name: Upload .deb to Cloudsmith
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          cloudsmith push deb x71c9/atar/any-distro/any-version target/debian/atar_${version}_amd64.deb
+          cloudsmith push deb x71c9/atar/any-distro/any-version target/debian/atar_${version}_arm64.deb
 
-  #publish-fedora:
-  #  name: Publish to Fedora COPR
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - name: Checkout repository
-  #      uses: actions/checkout@v4
+  publish-fedora:
+    name: Publish to Fedora COPR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  #    - name: Install tools
-  #      run: |
-  #        sudo apt-get update
-  #        sudo apt-get install -y build-essential rpm python3-pip pipx
-  #        pipx ensurepath
-  #        source ~/.bashrc
-  #        pipx install copr-cli
-  #        cargo install cargo-rpm
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential rpm python3-pip pipx
+          pipx ensurepath
+          source ~/.bashrc
+          pipx install copr-cli
+          cargo install cargo-rpm
 
-  #    - name: Init and publish
-  #      env:
-  #        COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
-  #        COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
-  #      run: |
-  #        version=${GITHUB_REF_NAME#v}
-  #        mkdir -p ~/.config/
-  #        touch ~/.config/copr
-  #        #######################################################
-  #        # Get this from https://copr.fedorainfracloud.org/api #
-  #        #######################################################
-  #        cat > ~/.config/copr <<EOF
-  #        [copr-cli]
-  #        login = $COPR_LOGIN
-  #        username = x71c9
-  #        token = $COPR_TOKEN
-  #        copr_url = https://copr.fedorainfracloud.org
-  #        EOF
-  #        cargo rpm init
-  #        cargo rpm build
-  #        copr-cli build x71c9/atar target/release/rpmbuild/SRPMS/atar-${version}-1.src.rpm
+      - name: Init and publish
+        env:
+          COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+          COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          mkdir -p ~/.config/
+          touch ~/.config/copr
+          #######################################################
+          # Get this from https://copr.fedorainfracloud.org/api #
+          #######################################################
+          cat > ~/.config/copr <<EOF
+          [copr-cli]
+          login = $COPR_LOGIN
+          username = x71c9
+          token = $COPR_TOKEN
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+          cargo rpm init
+          cargo rpm build
+          copr-cli build x71c9/atar target/release/rpmbuild/SRPMS/atar-${version}-1.src.rpm
 
