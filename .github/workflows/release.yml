@@ -139,7 +139,7 @@ jobs:
           pkgname=atar
           pkgver=${version}
           pkgrel=1
-          pkgdesc="The fastest and lightest bookmark manager CLI written in Rust"
+          pkgdesc="Ephemeral Terraform runner that applies a configuration on start, displays output variables, and automatically destroys all resources on exit or failure."
           arch=('x86_64' 'aarch64')
           url="https://github.com/x71c9/atar"
           license=('MIT')
@@ -227,22 +227,16 @@ jobs:
           cargo generate-rpm --target aarch64-unknown-linux-gnu \
             --output target/rpm/atar-${version}-1.aarch64.rpm
 
+      - name: Install Cloudsmith CLI
+        run: |
+          sudo apt update && sudo apt install -y python3-pip
+          sudo apt install -y pipx
+          pipx ensurepath
+          source ~/.bashrc
+          pipx install cloudsmith-cli
+
       - name: Upload .deb and .rpm to Cloudsmith
         env:
           CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
         run: |
-          # Upload .deb packages
-          for deb in target/debian/*.deb; do
-            echo "Uploading Debian package: $deb"
-            curl --fail --show-error --silent -u "$CLOUDSMITH_API_KEY:" \
-              -F "package=@${deb}" \
-              https://api.cloudsmith.io/v1/packages/x71c9/atar/upload/deb/
-          done
-
-          # Upload .rpm packages
-          for rpm in target/rpm/*.rpm; do
-            echo "Uploading RPM package: $rpm"
-            curl --fail --show-error --silent -u "$CLOUDSMITH_API_KEY:" \
-              -F "package=@${rpm}" \
-              https://api.cloudsmith.io/v1/packages/x71c9/atar/upload/rpm/
-          done
+          cloudsmith push deb x71c9/atar/any-distro/any-version target/debian/atar_${version}_amd64.deb
