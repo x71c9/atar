@@ -1,4 +1,4 @@
----
+--
 name: Release Binaries
 on:
   push:
@@ -177,7 +177,7 @@ jobs:
 
   publish-debian:
     name: Publish Debian to Cloudsmith
-    needs: release
+    # needs: release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
