@@ -217,14 +217,14 @@ jobs:
           # Build RPM for x86_64
           mkdir -p target/rpm-root/usr/bin
           cp target/x86_64-unknown-linux-gnu/release/atar target/rpm-root/usr/bin/atar
-          cargo generate-rpm --target x86_64-unknown-linux-gnu --install-path target/rpm-root \
+          cargo generate-rpm --target x86_64-unknown-linux-gnu \
             --output target/rpm/atar-${version}-1.x86_64.rpm
 
           # Build RPM for aarch64
           rm -rf target/rpm-root
           mkdir -p target/rpm-root/usr/bin
           cp target/aarch64-unknown-linux-gnu/release/atar target/rpm-root/usr/bin/atar
-          cargo generate-rpm --target aarch64-unknown-linux-gnu --install-path target/rpm-root \
+          cargo generate-rpm --target aarch64-unknown-linux-gnu \
             --output target/rpm/atar-${version}-1.aarch64.rpm
 
       - name: Upload .deb and .rpm to Cloudsmith
