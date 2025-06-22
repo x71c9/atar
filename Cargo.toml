@@ -20,11 +20,6 @@ categories = [
 [package.metadata.deb]
 depends = []
 
-[package.metadata.generate-rpm]
-assets = [
-  { source = "target/release/atar", dest = "/usr/bin/atar", mode = "0755" },
-]
-
 [dependencies]
 anyhow = "1.0"
 serde_json = "1.0"

@@ -189,7 +189,10 @@ jobs:
       - name: Install tools for cross-build and packaging
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq build-essential rpm
+          sudo apt-get install -y build-essential jq python3-pip pipx
+          pipx ensurepath
+          source ~/.bashrc
+          pipx install cloudsmith-cli
           cargo install cross
           cargo install cargo-deb
 
@@ -208,18 +211,49 @@ jobs:
           cargo deb --no-strip --no-build --target aarch64-unknown-linux-gnu \
             --output target/debian/atar_${version}_arm64.deb
 
-      - name: Install Cloudsmith CLI
-        run: |
-          sudo apt update && sudo apt install -y python3-pip
-          sudo apt install -y pipx
-          pipx ensurepath
-          source ~/.bashrc
-          pipx install cloudsmith-cli
-
-      - name: Upload .deb and .rpm to Cloudsmith
+      - name: Upload .deb to Cloudsmith
         env:
           CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
         run: |
           version=${GITHUB_REF_NAME#v}
           cloudsmith push deb x71c9/atar/any-distro/any-version target/debian/atar_${version}_amd64.deb
           cloudsmith push deb x71c9/atar/any-distro/any-version target/debian/atar_${version}_arm64.deb
+
+  publish-fedora:
+    name: Publish Fedora
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential rpm python3-pip pipx
+          pipx ensurepath
+          source ~/.bashrc
+          pipx install copr-cli
+          cargo install cargo-rpm
+
+      - name: Init and publish
+        env:
+          COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+          COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          mkdir -p ~/.config/
+          touch ~/.config/copr
+          #######################################################
+          # Get this from https://copr.fedorainfracloud.org/api #
+          #######################################################
+          cat > ~/.config/copr <<EOF
+          [copr-cli]
+          login = $COPR_LOGIN
+          username = x71c9
+          token = $COPR_TOKEN
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+          cargo rpm init
+          cargo rpm build
+          copr-cli build x71c9/atar target/release/rpmbuild/SRPMS/atar-${version}-1.src.rpm
+
