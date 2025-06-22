@@ -1,6 +1,6 @@
 [package]
 name = "atar"
-version = "0.1.23"
+version = "0.1.24"
 edition = "2021"
 authors = ["Andrea Reni <mail@x71c9.com>"]
 description = "Ephemeral Terraform runner: applies on start, auto-destroys on exit or failure."
