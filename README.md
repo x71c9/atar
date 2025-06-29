@@ -22,7 +22,7 @@ yay -S atar
 
 MacOS:
 ```bash
-homebrew install x71c9/x71c9/atar
+brew install x71c9/x71c9/atar
 ```
 
 Debian:
