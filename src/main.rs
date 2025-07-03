@@ -11,7 +11,7 @@ use std::{
 
 fn main() {
   run().unwrap_or_else(|err| {
-    eprintln!("Error: {}", err);
+    eprintln!("Error: {}\nRun with --debug flag for more information", err);
     process::exit(1);
   })
 }
